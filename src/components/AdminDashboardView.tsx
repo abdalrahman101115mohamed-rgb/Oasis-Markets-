@@ -200,25 +200,62 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
     };
   }, [applyDashboardData]);
 
-  // Real-time multi-device sync for Admin (new orders, stock changes, etc.)
+  // Real-time multi-device sync for Admin (SSE on Node server, smart polling on Cloudflare Workers)
   useEffect(() => {
     if (!admin) return;
-    const evtSource = new EventSource('/api/stream');
-    evtSource.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as { type: string };
-        if (
-          msg.type === 'orders_updated' ||
-          msg.type === 'catalog_updated' ||
-          msg.type === 'settings_updated'
-        ) {
+    let pollTimer: number | null = null;
+    const startPolling = () => {
+      if (pollTimer !== null) return;
+      pollTimer = window.setInterval(() => {
+        if (document.visibilityState === 'visible') {
           loadDashboard({ silent: true });
         }
-      } catch {
-        // ignore parse errors
+      }, 6000);
+    };
+
+    let evtSource: EventSource | null = null;
+    if (typeof window !== 'undefined' && 'EventSource' in window) {
+      evtSource = new EventSource('/api/stream');
+      evtSource.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data) as { type: string; mode?: string };
+          if (msg.type === 'connected' && msg.mode === 'serverless') {
+            evtSource?.close();
+            startPolling();
+            return;
+          }
+          if (
+            msg.type === 'orders_updated' ||
+            msg.type === 'catalog_updated' ||
+            msg.type === 'settings_updated'
+          ) {
+            loadDashboard({ silent: true });
+          }
+        } catch {
+          // ignore parse errors
+        }
+      };
+      evtSource.onerror = () => {
+        startPolling();
+      };
+    } else {
+      startPolling();
+    }
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        loadDashboard({ silent: true });
       }
     };
-    return () => evtSource.close();
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      evtSource?.close();
+      if (pollTimer !== null) window.clearInterval(pollTimer);
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [admin, loadDashboard]);
 
   const handleAdminAuth = async (e: React.FormEvent) => {

@@ -106,7 +106,23 @@ async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
     },
   });
 
-  const data = await res.json().catch(() => ({}));
+  const contentType = res.headers.get('content-type') || '';
+  const text = await res.text();
+  let data: Record<string, unknown> = {};
+  if (text.trim().length > 0) {
+    if (!contentType.includes('application/json')) {
+      throw new ApiError(
+        'تعذر الاتصال بخادم قاعدة البيانات (الخادم أعاد استجابة غير صالحة بدل بيانات المتجر)',
+        res.status || 502,
+      );
+    }
+    try {
+      data = JSON.parse(text) as Record<string, unknown>;
+    } catch {
+      throw new ApiError('تعذر قراءة بيانات الخادم بصيغة JSON صالحة', res.status || 502);
+    }
+  }
+
   if (!res.ok) {
     if (
       isAdminRoute &&
@@ -119,7 +135,8 @@ async function apiFetch<T>(url: string, options: RequestInit = {}): Promise<T> {
     if (!isAdminRoute && url === '/api/customer/me' && res.status === 401) {
       setCustomerToken(null);
     }
-    throw new ApiError(data.error || 'حدث خطأ في الاتصال بالخادم', res.status);
+    const errMsg = typeof data.error === 'string' ? data.error : 'حدث خطأ في الاتصال بالخادم';
+    throw new ApiError(errMsg, res.status);
   }
   return data as T;
 }
@@ -129,10 +146,21 @@ export interface BootstrapResponse {
   products: Product[];
   zones: DeliveryZone[];
   settings: StoreSettings;
+  mapsApiKey?: string;
 }
 
-export function fetchBootstrap(): Promise<BootstrapResponse> {
-  return apiFetch<BootstrapResponse>('/api/bootstrap');
+export async function fetchBootstrap(): Promise<BootstrapResponse> {
+  const data = await apiFetch<BootstrapResponse>('/api/bootstrap');
+  if (
+    !data ||
+    !Array.isArray(data.categories) ||
+    !Array.isArray(data.products) ||
+    !Array.isArray(data.zones) ||
+    !data.settings
+  ) {
+    throw new ApiError('استجابة المتجر غير مكتملة من الخادم', 502);
+  }
+  return data;
 }
 
 export function fetchMyOrders(): Promise<{ orders: Order[] }> {
@@ -258,9 +286,45 @@ export function fetchAdminDashboard(): Promise<AdminDashboardData> {
   return apiFetch<AdminDashboardData>('/api/admin/dashboard');
 }
 
-export function uploadProductImage(file: File): Promise<{ imageUrl: string }> {
+async function compressImageForUpload(file: File): Promise<File> {
+  // Keep small images or GIFs untouched
+  if (file.size <= 300 * 1024 || file.type === 'image/gif') {
+    return file;
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxDim = 960;
+    const scale = Math.min(1, maxDim / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      bitmap.close();
+      return file;
+    }
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/jpeg', 0.84),
+    );
+    if (!blob || blob.size >= file.size) {
+      return file;
+    }
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'product';
+    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg' });
+  } catch {
+    return file;
+  }
+}
+
+export async function uploadProductImage(file: File): Promise<{ imageUrl: string }> {
+  const prepared = await compressImageForUpload(file);
   const formData = new FormData();
-  formData.append('image', file);
+  formData.append('image', prepared);
   return apiFetch<{ imageUrl: string }>('/api/admin/upload', {
     method: 'POST',
     body: formData,

@@ -27,6 +27,7 @@ interface CartCheckoutViewProps {
   quantities: Record<string, number>;
   address: DeliveryAddress;
   customer: CustomerProfile | null;
+  runtimeMapsApiKey?: string;
   onIncrement: (id: string) => void;
   onDecrement: (id: string) => void;
   onRemoveItem: (id: string) => void;
@@ -42,6 +43,7 @@ export const CartCheckoutView: React.FC<CartCheckoutViewProps> = ({
   quantities,
   address,
   customer,
+  runtimeMapsApiKey,
   onIncrement,
   onDecrement,
   onRemoveItem,
@@ -425,6 +427,7 @@ export const CartCheckoutView: React.FC<CartCheckoutViewProps> = ({
               lat={address.lat}
               lng={address.lng}
               gpsAccuracy={address.gpsAccuracy}
+              runtimeMapsApiKey={runtimeMapsApiKey}
               onChange={(coords) =>
                 onUpdateAddress({
                   ...address,

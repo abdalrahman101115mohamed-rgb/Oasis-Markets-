@@ -61,6 +61,7 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>([]);
   const [zones, setZones] = useState<DeliveryZone[]>([]);
   const [settings, setSettings] = useState<StoreSettings>(DEFAULT_SETTINGS);
+  const [runtimeMapsApiKey, setRuntimeMapsApiKey] = useState<string | undefined>(undefined);
   const [loadingStore, setLoadingStore] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -116,14 +117,17 @@ export default function App() {
     try {
       setLoadError(null);
       const data = await fetchBootstrap();
-      setCategories(data.categories);
-      setProducts(data.products);
-      setZones(data.zones);
-      setSettings(data.settings);
+      setCategories(data.categories ?? []);
+      setProducts(data.products ?? []);
+      setZones(data.zones ?? []);
+      setSettings(data.settings ?? DEFAULT_SETTINGS);
+      if (data.mapsApiKey) {
+        setRuntimeMapsApiKey(data.mapsApiKey);
+      }
 
       // Keep address zone aligned with active zones
       setAddress((prev) => {
-        if (data.zones.length === 0) return prev;
+        if (!data.zones || data.zones.length === 0) return prev;
         const matched = data.zones.find((z) => z.id === prev.zoneId);
         if (matched) return { ...prev, area: matched.name };
         return {
@@ -143,7 +147,7 @@ export default function App() {
     setLoadingOrders(true);
     try {
       const res = await fetchMyOrders();
-      setMyOrders(res.orders);
+      setMyOrders(Array.isArray(res.orders) ? res.orders : []);
     } catch {
       // keep existing
     } finally {
@@ -155,25 +159,64 @@ export default function App() {
     loadStoreData();
     loadMyOrders();
     fetchCustomerMe()
-      .then((res) => setCustomer(res.customer))
+      .then((res) => setCustomer(res.customer ?? null))
       .catch(() => {});
 
-    const evtSource = new EventSource('/api/stream');
-    evtSource.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data) as { type: string };
-        if (msg.type === 'catalog_updated' || msg.type === 'settings_updated') {
+    let pollTimer: number | null = null;
+    const startPolling = () => {
+      if (pollTimer !== null) return;
+      pollTimer = window.setInterval(() => {
+        if (document.visibilityState === 'visible') {
           loadStoreData();
-        }
-        if (msg.type === 'orders_updated') {
           loadMyOrders();
         }
-      } catch {
-        // ignore parse issues
-      }
+      }, 6000);
     };
 
-    return () => evtSource.close();
+    let evtSource: EventSource | null = null;
+    if (typeof window !== 'undefined' && 'EventSource' in window) {
+      evtSource = new EventSource('/api/stream');
+      evtSource.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data) as { type: string; mode?: string };
+          if (msg.type === 'connected' && msg.mode === 'serverless') {
+            evtSource?.close();
+            startPolling();
+            return;
+          }
+          if (msg.type === 'catalog_updated' || msg.type === 'settings_updated') {
+            loadStoreData();
+          }
+          if (msg.type === 'orders_updated') {
+            loadMyOrders();
+          }
+        } catch {
+          // ignore parse issues
+        }
+      };
+      evtSource.onerror = () => {
+        // Fallback smoothly on serverless hosts (e.g., Cloudflare Workers)
+        startPolling();
+      };
+    } else {
+      startPolling();
+    }
+
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        loadStoreData();
+        loadMyOrders();
+      }
+    };
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+
+    return () => {
+      evtSource?.close();
+      if (pollTimer !== null) window.clearInterval(pollTimer);
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+    };
   }, [loadStoreData, loadMyOrders]);
 
   const categoryNameMap = useMemo(
@@ -335,6 +378,7 @@ export default function App() {
                 quantities={quantities}
                 address={address}
                 customer={customer}
+                runtimeMapsApiKey={runtimeMapsApiKey}
                 onIncrement={handleIncrement}
                 onDecrement={handleDecrement}
                 onRemoveItem={handleRemoveItem}
@@ -402,6 +446,7 @@ export default function App() {
         isOpen={isAddressOpen}
         zones={zones}
         currentAddress={address}
+        runtimeMapsApiKey={runtimeMapsApiKey}
         onClose={() => setIsAddressOpen(false)}
         onSave={setAddress}
       />

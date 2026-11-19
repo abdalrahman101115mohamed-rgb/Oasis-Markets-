@@ -7,6 +7,7 @@ interface AddressSheetProps {
   isOpen: boolean;
   zones: DeliveryZone[];
   currentAddress: DeliveryAddress;
+  runtimeMapsApiKey?: string;
   onClose: () => void;
   onSave: (address: DeliveryAddress) => void;
 }
@@ -15,6 +16,7 @@ export const AddressSheet: React.FC<AddressSheetProps> = ({
   isOpen,
   zones,
   currentAddress,
+  runtimeMapsApiKey,
   onClose,
   onSave,
 }) => {
@@ -125,6 +127,7 @@ export const AddressSheet: React.FC<AddressSheetProps> = ({
             lat={lat}
             lng={lng}
             gpsAccuracy={gpsAccuracy}
+            runtimeMapsApiKey={runtimeMapsApiKey}
             onChange={(coords) => {
               setLat(coords.lat);
               setLng(coords.lng);

@@ -1,10 +1,11 @@
 import React from 'react';
 import { ArrowLeft, ChevronLeft, MapPin, Search, ShieldCheck, ShoppingBasket, X } from 'lucide-react';
+import heroBannerImage from '../assets/images/oasis_hero_banner_1795123416006.jpg';
 import { Category, DeliveryAddress, Product, StoreSettings } from '../types/catalog';
 import { CategoryIcon } from './CategoryIcon';
 import { ProductCard } from './ProductCard';
 
-const HERO_BANNER_IMAGE = '/src/assets/images/oasis_hero_banner_1795123416006.jpg';
+const HERO_BANNER_IMAGE = heroBannerImage;
 
 interface HomeViewProps {
   categories: Category[];

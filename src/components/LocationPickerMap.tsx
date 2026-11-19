@@ -12,6 +12,7 @@ interface LocationPickerMapProps {
   lat: number | null;
   lng: number | null;
   gpsAccuracy: number | null;
+  runtimeMapsApiKey?: string;
   onChange: (coords: { lat: number; lng: number; gpsAccuracy: number | null }) => void;
 }
 
@@ -21,9 +22,11 @@ export const LocationPickerMap: React.FC<LocationPickerMapProps> = ({
   lat,
   lng,
   gpsAccuracy,
+  runtimeMapsApiKey,
   onChange,
 }) => {
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+  const apiKey =
+    (import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined) || runtimeMapsApiKey;
   const [locating, setLocating] = useState(false);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
