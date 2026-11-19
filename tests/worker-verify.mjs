@@ -195,6 +195,8 @@ async function run() {
   assert.equal(healthNoDb.status, 200);
   assert.equal(healthNoDb.json.ok, true);
   assert.equal(healthNoDb.json.runtime, 'cloudflare-workers');
+  assert.equal(healthNoDb.json.dbBound, false);
+  assert.equal(healthNoDb.json.assetsBound, true);
 
   const bootNoDb = await noDbClient.req('/api/bootstrap');
   assert.equal(bootNoDb.status, 503);
@@ -206,6 +208,11 @@ async function run() {
     ASSETS: assets,
     GOOGLE_MAPS_API_KEY: 'test-maps-key-for-worker',
   };
+
+  const withDbClient = new WorkerClient(env);
+  const healthWithDb = await withDbClient.req('/api/health');
+  assert.equal(healthWithDb.json.dbBound, true);
+  assert.equal(healthWithDb.json.assetsBound, true);
 
   try {
     const adminPhoneA = new WorkerClient(env, { useCookies: false });

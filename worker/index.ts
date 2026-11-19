@@ -705,7 +705,13 @@ export default {
     }
 
     if (pathname === '/api/health' && method === 'GET') {
-      return jsonResponse({ ok: true, runtime: 'cloudflare-workers', timestamp: Date.now() });
+      return jsonResponse({
+        ok: true,
+        runtime: 'cloudflare-workers',
+        dbBound: Boolean(env.DB),
+        assetsBound: Boolean(env.ASSETS),
+        timestamp: Date.now(),
+      });
     }
 
     if (pathname === '/api/stream' && method === 'GET') {
