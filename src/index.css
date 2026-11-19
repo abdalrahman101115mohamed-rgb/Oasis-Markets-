@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-display: 'Cairo', sans-serif;
+    --font-body: 'Tajawal', 'Cairo', sans-serif;
+    --oasis-bg: #F8FAF8;
+    --oasis-surface: #FFFFFF;
+    --oasis-surface-alt: #EDF3EE;
+    --oasis-border: #DCE6DE;
+    --oasis-ink: #0F2417;
+    --oasis-muted: #4A6353;
+    --oasis-green: #15803D;
+    --oasis-green-dark: #166534;
+    --oasis-gold: #B68A1E;
+  }
+
+  html {
+    font-family: var(--font-body);
+    direction: rtl;
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

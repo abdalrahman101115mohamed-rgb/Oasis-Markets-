@@ -1,0 +1,6 @@
+{
+  "name": "أسواق الواحة — سوبر ماركت",
+  "description": "تطبيق أسواق الواحة لعرض منتجات السوبر ماركت والطلبات والتوصيل المنزلي باللغة العربية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
