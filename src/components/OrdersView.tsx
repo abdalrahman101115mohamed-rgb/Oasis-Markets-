@@ -1,5 +1,15 @@
-import React from 'react';
-import { CheckCircle2, ClipboardList, Clock, PackageCheck, RefreshCw, Truck, XCircle } from 'lucide-react';
+import React, { useState } from 'react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  ClipboardList,
+  Clock,
+  PackageCheck,
+  RefreshCw,
+  RotateCcw,
+  Truck,
+  XCircle,
+} from 'lucide-react';
 import { Order, OrderStatus } from '../types/catalog';
 
 interface OrdersViewProps {
@@ -7,42 +17,81 @@ interface OrdersViewProps {
   loading: boolean;
   onRefresh: () => void;
   onGoShopping: () => void;
+  onReorder: (order: Order) => { ok: boolean; message?: string };
 }
 
-const STATUS_LABELS: Record<OrderStatus, { label: string; color: string; icon: React.ReactNode }> = {
+interface StatusBadgeStyle {
+  label: string;
+  badgeClass: string;
+  icon: React.ReactNode;
+  stepIndex: number;
+}
+
+const STATUS_BADGES: Record<OrderStatus, StatusBadgeStyle> = {
   new: {
-    label: 'تم استلام الطلب (جديد)',
-    color: 'text-[#B68A1E]',
-    icon: <Clock className="w-4 h-4" />,
+    label: 'قيد المعالجة · طلب جديد',
+    badgeClass: 'bg-[#FEF3C7] text-[#92400E] border-[#FCD34D]',
+    icon: <Clock className="w-3.5 h-3.5 shrink-0" />,
+    stepIndex: 0,
   },
   preparing: {
-    label: 'جاري تجهيز الطلب',
-    color: 'text-[#15803D]',
-    icon: <PackageCheck className="w-4 h-4" />,
+    label: 'قيد المعالجة · جاري التجهيز',
+    badgeClass: 'bg-[#ECFDF5] text-[#15803D] border-[#86EFAC]',
+    icon: <PackageCheck className="w-3.5 h-3.5 shrink-0" />,
+    stepIndex: 1,
   },
   out_for_delivery: {
-    label: 'خرج للتوصيل',
-    color: 'text-[#0369A1]',
-    icon: <Truck className="w-4 h-4" />,
+    label: 'قيد المعالجة · خرج للتوصيل',
+    badgeClass: 'bg-[#E0F2FE] text-[#0369A1] border-[#7DD3FC]',
+    icon: <Truck className="w-3.5 h-3.5 shrink-0" />,
+    stepIndex: 2,
   },
   completed: {
-    label: 'تم التسليم بنجاح',
-    color: 'text-[#15803D]',
-    icon: <CheckCircle2 className="w-4 h-4" />,
+    label: 'تم التوصيل',
+    badgeClass: 'bg-[#DCFCE7] text-[#166534] border-[#4ADE80]',
+    icon: <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />,
+    stepIndex: 3,
   },
   cancelled: {
-    label: 'ملغي',
-    color: 'text-[#9A3412]',
-    icon: <XCircle className="w-4 h-4" />,
+    label: 'ملغى',
+    badgeClass: 'bg-[#FEE2E2] text-[#B91C1C] border-[#FCA5A5]',
+    icon: <XCircle className="w-3.5 h-3.5 shrink-0" />,
+    stepIndex: -1,
   },
 };
+
+const TIMELINE_STEPS = [
+  { key: 'new', label: 'تم الاستلام' },
+  { key: 'preparing', label: 'قيد المعالجة' },
+  { key: 'out_for_delivery', label: 'في الطريق' },
+  { key: 'completed', label: 'تم التوصيل' },
+] as const;
 
 export const OrdersView: React.FC<OrdersViewProps> = ({
   orders,
   loading,
   onRefresh,
   onGoShopping,
+  onReorder,
 }) => {
+  const [reorderErrorByOrder, setReorderErrorByOrder] = useState<Record<string, string>>({});
+
+  const handleReorderClick = (order: Order) => {
+    const result = onReorder(order);
+    if (!result.ok && result.message) {
+      setReorderErrorByOrder((prev) => ({
+        ...prev,
+        [order.id]: result.message!,
+      }));
+    } else {
+      setReorderErrorByOrder((prev) => {
+        const next = { ...prev };
+        delete next[order.id];
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-6 pb-8">
       <div className="flex items-center justify-between gap-4">
@@ -85,7 +134,8 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
       ) : (
         <div className="space-y-4">
           {orders.map((order) => {
-            const st = STATUS_LABELS[order.status];
+            const st = STATUS_BADGES[order.status] || STATUS_BADGES.new;
+            const reorderError = reorderErrorByOrder[order.id];
             return (
               <article
                 key={order.id}
@@ -100,11 +150,45 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
                       {new Date(order.createdAt).toLocaleString('ar-EG')}
                     </span>
                   </div>
-                  <div className={`inline-flex items-center gap-1.5 text-xs font-bold ${st.color}`}>
+                  <span
+                    role="status"
+                    aria-label={`حالة الطلب: ${st.label}`}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold ${st.badgeClass}`}
+                  >
                     {st.icon}
                     <span>{st.label}</span>
-                  </div>
+                  </span>
                 </div>
+
+                {/* Progress steps for active/completed orders, or clear notice if cancelled */}
+                {order.status === 'cancelled' ? (
+                  <div className="rounded-xl bg-[#FEF2F2] border border-[#FECACA] px-3.5 py-2.5 text-xs font-medium text-[#991B1B] flex items-center gap-2">
+                    <XCircle className="w-4 h-4 shrink-0" />
+                    <span>تم إلغاء هذا الطلب. يمكنك إعادة الطلب من المتجر في أي وقت.</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 gap-1.5 pt-1" aria-label="مراحل حالة الطلب">
+                    {TIMELINE_STEPS.map((step, idx) => {
+                      const active = idx <= st.stepIndex;
+                      return (
+                        <div key={step.key} className="space-y-1">
+                          <div
+                            className={`h-1.5 rounded-full transition-colors ${
+                              active ? 'bg-[#15803D]' : 'bg-[#E5ECE6]'
+                            }`}
+                          />
+                          <span
+                            className={`block text-[10px] sm:text-[11px] text-center font-medium ${
+                              active ? 'text-[#0F2417] font-bold' : 'text-[#738A7B]'
+                            }`}
+                          >
+                            {step.label}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
 
                 <div className="divide-y divide-[#EDF3EE] text-sm">
                   {order.items.map((item) => (
@@ -132,6 +216,29 @@ export const OrdersView: React.FC<OrdersViewProps> = ({
                       {order.totalEgp} ج.م
                     </span>
                   </div>
+                </div>
+
+                {reorderError && (
+                  <div
+                    role="alert"
+                    className="rounded-xl bg-[#FEF2F2] border border-[#FECACA] px-3.5 py-2.5 text-xs font-bold text-[#991B1B] flex items-center gap-2"
+                  >
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{reorderError}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleReorderClick(order)}
+                    disabled={order.items.length === 0}
+                    aria-label={`إعادة طلب الطلب رقم #${order.orderNumber}`}
+                    className="w-full sm:w-auto min-h-[44px] px-5 rounded-xl bg-[#15803D] text-white text-xs sm:text-sm font-bold hover:bg-[#166534] active:scale-[0.99] disabled:opacity-50 inline-flex items-center justify-center gap-2 cursor-pointer transition-all"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>إعادة طلب</span>
+                  </button>
                 </div>
               </article>
             );

@@ -220,9 +220,11 @@ async function run() {
     const otherCustomerPhoneC = new WorkerClient(env, { useCookies: true });
 
     console.log('2. Testing production HTML, CSS, JS, bundled hero image & SPA fallback...');
+    assert.ok(fs.existsSync(path.join(DIST_DIR, '_headers')), 'dist/_headers must exist for Cloudflare Assets');
     const rootRes = await customerPhoneB.req('/');
     assert.equal(rootRes.status, 200);
     assert.ok(rootRes.headers.get('content-type')?.includes('text/html'));
+    assert.equal(rootRes.headers.get('permissions-policy'), 'geolocation=(self)');
     assert.ok(
       !rootRes.text.includes('/src/main.tsx'),
       'Built HTML must NOT reference raw /src/main.tsx',
@@ -432,6 +434,65 @@ async function run() {
 
     const bootRestored = await customerPhoneB.req('/api/bootstrap');
     assert.equal(bootRestored.json.products[0].stockQuantity, 12);
+
+    console.log('7. Testing D1 product star ratings & customer reviews (GET/POST & validation)...');
+    const rev404 = await customerPhoneB.req('/api/products/non-existent-id/reviews');
+    assert.equal(rev404.status, 404);
+
+    const revEmpty = await customerPhoneB.req(`/api/products/${prodId}/reviews`);
+    assert.equal(revEmpty.status, 200);
+    assert.equal(revEmpty.json.reviews.length, 0);
+    assert.equal(revEmpty.json.summary.averageRating, 0);
+    assert.equal(revEmpty.json.summary.totalCount, 0);
+
+    const revBadRating = await customerPhoneB.req(`/api/products/${prodId}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ authorName: 'سارة', rating: 6, comment: 'تقييم غير صالح' }),
+    });
+    assert.equal(revBadRating.status, 400);
+
+    const revBadName = await customerPhoneB.req(`/api/products/${prodId}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ authorName: 'أ', rating: 5, comment: 'اسم قصير' }),
+    });
+    assert.equal(revBadName.status, 400);
+
+    const revPost1 = await customerPhoneB.req(`/api/products/${prodId}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        authorName: 'سارة محمد',
+        rating: 5,
+        comment: 'جودة ممتازة وتغليف نظيف جدًا',
+      }),
+    });
+    assert.equal(revPost1.status, 201);
+    assert.equal(revPost1.json.review.rating, 5);
+    assert.equal(revPost1.json.summary.averageRating, 5);
+    assert.equal(revPost1.json.summary.totalCount, 1);
+
+    const revPost2 = await otherCustomerPhoneC.req(`/api/products/${prodId}/reviews`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        authorName: 'عميل ووركر',
+        rating: 4,
+        comment: 'طازج وسريع التوصيل',
+      }),
+    });
+    assert.equal(revPost2.status, 201);
+    assert.equal(revPost2.json.summary.averageRating, 4.5);
+    assert.equal(revPost2.json.summary.totalCount, 2);
+
+    const revList = await customerPhoneB.req(`/api/products/${prodId}/reviews`);
+    assert.equal(revList.status, 200);
+    assert.equal(revList.json.reviews.length, 2);
+    assert.equal(revList.json.reviews[0].rating, 4);
+    assert.equal(revList.json.reviews[1].rating, 5);
+    assert.equal(revList.json.summary.averageRating, 4.5);
+    assert.equal(revList.json.summary.totalCount, 2);
 
     console.log('ALL CLOUDFLARE WORKER + D1 + ASSETS TESTS PASSED!');
   } finally {

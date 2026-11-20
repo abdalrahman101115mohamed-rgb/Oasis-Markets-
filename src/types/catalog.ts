@@ -128,3 +128,24 @@ export interface AdminDashboardData {
   orders: Order[];
   settings: StoreSettings;
 }
+
+export interface ProductReview {
+  id: string;
+  productId: string;
+  authorName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
+export interface ProductReviewSummary {
+  averageRating: number;
+  totalCount: number;
+}
+
+export interface ReorderNotice {
+  orderNumber: number;
+  addedCount: number;
+  unavailableNames: string[];
+  cappedNames: string[];
+}

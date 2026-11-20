@@ -295,6 +295,64 @@ async function run() {
   assert.equal(bootRestored.json.products[0].stockQuantity, 10, 'Stock must be restored on cancel');
   assert.equal(bootRestored.json.products[0].priceEgp, 50, 'Customer sees updated price');
 
+  console.log('7. Testing SQLite product star ratings & customer reviews (GET/POST & validation)...');
+  const rev404 = await customerPhoneB.req('/api/products/non-existent-id/reviews');
+  assert.equal(rev404.status, 404);
+
+  const revEmpty = await customerPhoneB.req(`/api/products/${prodId}/reviews`);
+  assert.equal(revEmpty.status, 200);
+  assert.equal(revEmpty.json.reviews.length, 0);
+  assert.equal(revEmpty.json.summary.averageRating, 0);
+  assert.equal(revEmpty.json.summary.totalCount, 0);
+
+  const revInvalid = await customerPhoneB.req(`/api/products/${prodId}/reviews`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ authorName: 'أحمد', rating: 0, comment: 'تقييم غير صالح' }),
+  });
+  assert.equal(revInvalid.status, 400);
+
+  const revShortName = await customerPhoneB.req(`/api/products/${prodId}/reviews`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ authorName: 'م', rating: 5 }),
+  });
+  assert.equal(revShortName.status, 400);
+
+  const rev1 = await customerPhoneB.req(`/api/products/${prodId}/reviews`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      authorName: 'أحمد علي',
+      rating: 5,
+      comment: 'ممتاز وطازج جدًا',
+    }),
+  });
+  assert.equal(rev1.status, 201);
+  assert.equal(rev1.json.summary.averageRating, 5);
+  assert.equal(rev1.json.summary.totalCount, 1);
+
+  const rev2 = await otherCustomerPhoneC.req(`/api/products/${prodId}/reviews`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      authorName: 'عميل عادي',
+      rating: 4,
+      comment: 'جيد جدًا وسعره مناسب',
+    }),
+  });
+  assert.equal(rev2.status, 201);
+  assert.equal(rev2.json.summary.averageRating, 4.5);
+  assert.equal(rev2.json.summary.totalCount, 2);
+
+  const revList = await customerPhoneB.req(`/api/products/${prodId}/reviews`);
+  assert.equal(revList.status, 200);
+  assert.equal(revList.json.reviews.length, 2);
+  assert.equal(revList.json.reviews[0].rating, 4);
+  assert.equal(revList.json.reviews[1].rating, 5);
+  assert.equal(revList.json.summary.averageRating, 4.5);
+  assert.equal(revList.json.summary.totalCount, 2);
+
   console.log('ALL E2E MULTI-DEVICE & RBAC SECURITY TESTS PASSED!');
 }
 

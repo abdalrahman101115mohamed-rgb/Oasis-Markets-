@@ -52,6 +52,7 @@ function jsonResponse(
   const headers = new Headers({
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
+    'Permissions-Policy': 'geolocation=(self)',
     ...extraHeaders,
   });
   return new Response(JSON.stringify(body), { status, headers });
@@ -411,6 +412,17 @@ async function ensureDatabaseReady(db: D1Database): Promise<void> {
       data_base64 TEXT NOT NULL,
       created_at TEXT NOT NULL
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS product_reviews (
+      id TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL,
+      customer_id TEXT,
+      author_name TEXT NOT NULL,
+      rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+      comment TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    )`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_product_reviews_product
+      ON product_reviews(product_id, created_at DESC)`),
   ];
 
   await db.batch(statements);
@@ -699,7 +711,18 @@ export default {
     // Serve static frontend assets for non-API routes
     if (!pathname.startsWith('/api/') && !pathname.startsWith('/uploads/')) {
       if (env.ASSETS) {
-        return env.ASSETS.fetch(request);
+        const assetRes = await env.ASSETS.fetch(request);
+        const contentType = assetRes.headers.get('content-type') || '';
+        if (contentType.includes('text/html')) {
+          const nextHeaders = new Headers(assetRes.headers);
+          nextHeaders.set('Permissions-Policy', 'geolocation=(self)');
+          return new Response(assetRes.body, {
+            status: assetRes.status,
+            statusText: assetRes.statusText,
+            headers: nextHeaders,
+          });
+        }
+        return assetRes;
       }
       return new Response('Static assets binding (ASSETS) not configured', { status: 404 });
     }
@@ -786,6 +809,106 @@ export default {
           settings: mapSettings(settingsRow),
           ...(mapsApiKey ? { mapsApiKey } : {}),
         });
+      }
+
+      // Product Star Ratings & Customer Reviews
+      if (pathname.startsWith('/api/products/') && pathname.endsWith('/reviews')) {
+        const productId = decodeURIComponent(
+          pathname.slice('/api/products/'.length, -'/reviews'.length),
+        ).trim();
+        const product = await db
+          .prepare('SELECT id FROM products WHERE id = ?')
+          .bind(productId)
+          .first();
+        if (!product) {
+          return jsonResponse({ error: 'المنتج غير موجود' }, 404);
+        }
+
+        const mapReview = (row: Record<string, unknown>) => ({
+          id: String(row.id),
+          productId: String(row.product_id),
+          authorName: String(row.author_name),
+          rating: Number(row.rating),
+          comment: String(row.comment || ''),
+          createdAt: String(row.created_at),
+        });
+
+        const loadSummary = async () => {
+          const agg = await db
+            .prepare(
+              'SELECT COUNT(*) as totalCount, COALESCE(AVG(rating), 0) as avgRating FROM product_reviews WHERE product_id = ?',
+            )
+            .bind(productId)
+            .first<{ totalCount: number; avgRating: number }>();
+          const totalCount = Number(agg?.totalCount ?? 0);
+          const averageRating =
+            totalCount > 0 ? Math.round(Number(agg?.avgRating ?? 0) * 10) / 10 : 0;
+          return { averageRating, totalCount };
+        };
+
+        if (method === 'GET') {
+          const rowsRes = await db
+            .prepare(
+              'SELECT id, product_id, author_name, rating, comment, created_at FROM product_reviews WHERE product_id = ? ORDER BY created_at DESC LIMIT 50',
+            )
+            .bind(productId)
+            .all<Record<string, unknown>>();
+          return jsonResponse({
+            reviews: (rowsRes.results || []).map(mapReview),
+            summary: await loadSummary(),
+          });
+        }
+
+        if (method === 'POST') {
+          const customerId = await getAuthenticatedCustomerId(request, db, secret);
+          let fallbackName = '';
+          if (customerId) {
+            const cust = await db
+              .prepare('SELECT name FROM customers WHERE id = ?')
+              .bind(customerId)
+              .first<{ name: string }>();
+            if (cust?.name) fallbackName = String(cust.name);
+          }
+
+          const body = await readJsonBody(request);
+          const authorName = String(body.authorName ?? fallbackName).trim();
+          const rating = Number(body.rating);
+          const comment = String(body.comment || '').trim();
+
+          if (authorName.length < 2 || authorName.length > 60) {
+            return jsonResponse({ error: 'يرجى كتابة اسمك (من حرفين إلى 60 حرفًا)' }, 400);
+          }
+          if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+            return jsonResponse({ error: 'يرجى اختيار تقييم بالنجوم من 1 إلى 5' }, 400);
+          }
+          if (comment.length > 500) {
+            return jsonResponse({ error: 'التعليق طويل جدًا (الحد الأقصى 500 حرف)' }, 400);
+          }
+
+          const id = `rev_${crypto.randomUUID()}`;
+          const now = new Date().toISOString();
+          await db
+            .prepare(
+              'INSERT INTO product_reviews (id, product_id, customer_id, author_name, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            )
+            .bind(id, productId, customerId, authorName, rating, comment, now)
+            .run();
+
+          const inserted = await db
+            .prepare(
+              'SELECT id, product_id, author_name, rating, comment, created_at FROM product_reviews WHERE id = ?',
+            )
+            .bind(id)
+            .first<Record<string, unknown>>();
+
+          return jsonResponse(
+            {
+              review: inserted ? mapReview(inserted) : null,
+              summary: await loadSummary(),
+            },
+            201,
+          );
+        }
       }
 
       // Customer Authentication

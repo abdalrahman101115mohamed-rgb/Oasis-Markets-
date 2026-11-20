@@ -1,7 +1,10 @@
 import { createRoot } from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
 import App from './App.tsx';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 import './index.css';
+
+registerSW({ immediate: true });
 
 // Tier 1 Google Maps Platform Demo Key quota & auth failure listener
 (window as unknown as { gm_authFailure?: () => void }).gm_authFailure = () => {

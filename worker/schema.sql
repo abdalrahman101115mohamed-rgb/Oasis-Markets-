@@ -118,6 +118,19 @@ CREATE TABLE IF NOT EXISTS media_assets (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS product_reviews (
+  id TEXT PRIMARY KEY,
+  product_id TEXT NOT NULL,
+  customer_id TEXT,
+  author_name TEXT NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  comment TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_reviews_product
+  ON product_reviews(product_id, created_at DESC);
+
 INSERT OR IGNORE INTO categories (id, name, subtitle, icon_key, is_active, sort_order) VALUES
   ('vegetables', 'الخضروات', 'طازجة يوميًا', 'leaf', 1, 1),
   ('fruits', 'الفواكه', 'موسمية منتقاة', 'apple', 1, 2),

@@ -7,6 +7,8 @@ import {
   Order,
   OrderStatus,
   Product,
+  ProductReview,
+  ProductReviewSummary,
   StoreSettings,
 } from '../types/catalog';
 
@@ -165,6 +167,28 @@ export async function fetchBootstrap(): Promise<BootstrapResponse> {
 
 export function fetchMyOrders(): Promise<{ orders: Order[] }> {
   return apiFetch<{ orders: Order[] }>('/api/orders/my');
+}
+
+export function fetchProductReviews(productId: string): Promise<{
+  reviews: ProductReview[];
+  summary: ProductReviewSummary;
+}> {
+  return apiFetch<{ reviews: ProductReview[]; summary: ProductReviewSummary }>(
+    `/api/products/${encodeURIComponent(productId)}/reviews`,
+  );
+}
+
+export function submitProductReview(
+  productId: string,
+  payload: { authorName: string; rating: number; comment: string },
+): Promise<{ review: ProductReview; summary: ProductReviewSummary }> {
+  return apiFetch<{ review: ProductReview; summary: ProductReviewSummary }>(
+    `/api/products/${encodeURIComponent(productId)}/reviews`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function createOrder(payload: {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { LogOut, MapPin, ShieldCheck, User } from 'lucide-react';
 import { loginCustomer, logoutCustomer, registerCustomer } from '../services/api';
 import { CustomerProfile, DeliveryAddress } from '../types/catalog';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface AccountViewProps {
   customer: CustomerProfile | null;
@@ -175,6 +176,9 @@ export const AccountView: React.FC<AccountViewProps> = ({
           تحديد / تعديل
         </button>
       </div>
+
+      {/* Install App on Phone (PWA) */}
+      <PWAInstallButton variant="card" />
 
       {/* Secure Admin Portal Entry */}
       <div className="bg-white rounded-2xl border border-[#DCE6DE] p-5 flex items-center justify-between gap-4">

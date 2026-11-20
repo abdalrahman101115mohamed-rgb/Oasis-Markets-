@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import dotenv from 'dotenv';
 import express, { type NextFunction, type Request, type Response } from 'express';
@@ -26,6 +27,10 @@ const GUEST_COOKIE = 'oasis_guest_token';
 
 const app = express();
 app.set('trust proxy', 1);
+app.use((_req, res, next) => {
+  res.setHeader('Permissions-Policy', 'geolocation=(self)');
+  next();
+});
 app.use(express.json({ limit: '2mb' }));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
@@ -288,11 +293,110 @@ app.get('/api/bootstrap', (_req, res) => {
     unknown
   >;
 
+  const mapsApiKey =
+    process.env.VITE_GOOGLE_MAPS_API_KEY || process.env.GOOGLE_MAPS_API_KEY || undefined;
+
   res.json({
     categories,
     products,
     zones,
     settings: mapSettings(settingsRow),
+    ...(mapsApiKey ? { mapsApiKey } : {}),
+  });
+});
+
+function mapProductReview(row: Record<string, unknown>) {
+  return {
+    id: String(row.id),
+    productId: String(row.product_id),
+    authorName: String(row.author_name),
+    rating: Number(row.rating),
+    comment: String(row.comment || ''),
+    createdAt: String(row.created_at),
+  };
+}
+
+function getReviewSummary(productId: string) {
+  const agg = db
+    .prepare(
+      'SELECT COUNT(*) as totalCount, COALESCE(AVG(rating), 0) as avgRating FROM product_reviews WHERE product_id = ?',
+    )
+    .get(productId) as { totalCount: number; avgRating: number };
+  const totalCount = Number(agg?.totalCount ?? 0);
+  const averageRating = totalCount > 0 ? Math.round(Number(agg.avgRating) * 10) / 10 : 0;
+  return { averageRating, totalCount };
+}
+
+app.get('/api/products/:id/reviews', (req, res) => {
+  const productId = String(req.params.id || '').trim();
+  const product = db.prepare('SELECT id FROM products WHERE id = ?').get(productId);
+  if (!product) {
+    res.status(404).json({ error: 'المنتج غير موجود' });
+    return;
+  }
+
+  const rows = db
+    .prepare(
+      'SELECT id, product_id, author_name, rating, comment, created_at FROM product_reviews WHERE product_id = ? ORDER BY created_at DESC LIMIT 50',
+    )
+    .all(productId) as Record<string, unknown>[];
+
+  res.json({
+    reviews: rows.map(mapProductReview),
+    summary: getReviewSummary(productId),
+  });
+});
+
+app.post('/api/products/:id/reviews', (req, res) => {
+  const productId = String(req.params.id || '').trim();
+  const product = db.prepare('SELECT id FROM products WHERE id = ?').get(productId);
+  if (!product) {
+    res.status(404).json({ error: 'المنتج غير موجود' });
+    return;
+  }
+
+  const customerId = getAuthenticatedCustomerId(req);
+  let fallbackName = '';
+  if (customerId) {
+    const cust = db
+      .prepare('SELECT name FROM customers WHERE id = ?')
+      .get(customerId) as { name: string } | undefined;
+    if (cust?.name) fallbackName = cust.name;
+  }
+
+  const body = req.body ?? {};
+  const authorName = String(body.authorName ?? fallbackName).trim();
+  const rating = Number(body.rating);
+  const comment = String(body.comment || '').trim();
+
+  if (authorName.length < 2 || authorName.length > 60) {
+    res.status(400).json({ error: 'يرجى كتابة اسمك (من حرفين إلى 60 حرفًا)' });
+    return;
+  }
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+    res.status(400).json({ error: 'يرجى اختيار تقييم بالنجوم من 1 إلى 5' });
+    return;
+  }
+  if (comment.length > 500) {
+    res.status(400).json({ error: 'التعليق طويل جدًا (الحد الأقصى 500 حرف)' });
+    return;
+  }
+
+  const id = `rev_${crypto.randomUUID()}`;
+  const now = new Date().toISOString();
+  db.prepare(
+    'INSERT INTO product_reviews (id, product_id, customer_id, author_name, rating, comment, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+  ).run(id, productId, customerId, authorName, rating, comment, now);
+
+  const inserted = db
+    .prepare(
+      'SELECT id, product_id, author_name, rating, comment, created_at FROM product_reviews WHERE id = ?',
+    )
+    .get(id) as Record<string, unknown>;
+
+  res.status(201).json({
+    review: mapProductReview(inserted),
+    summary: getReviewSummary(productId),
   });
 });
 
@@ -1170,6 +1274,8 @@ app.patch('/api/admin/orders/:id/status', requireAdmin, (req, res) => {
 // Start Vite (dev) or Serve Built Assets (prod)
 // ==========================================
 async function startServer() {
+  const httpServer = http.createServer(app);
+
   if (process.env.NODE_ENV === 'production') {
     const distDir = path.resolve(process.cwd(), 'dist');
     app.use(express.static(distDir));
@@ -1179,14 +1285,18 @@ async function startServer() {
   } else {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: process.env.DISABLE_HMR === 'true' ? false : true,
+        ws: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   }
 
   const PORT = Number(process.env.PORT) || 3000;
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Al-Waha Market server listening on http://0.0.0.0:${PORT}`);
   });
 }

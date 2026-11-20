@@ -14,6 +14,7 @@ import { HomeView } from './components/HomeView';
 import { OrdersView } from './components/OrdersView';
 import { ProductDetailSheet } from './components/ProductDetailSheet';
 import { SplashScreen } from './components/SplashScreen';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { TopBar } from './components/TopBar';
 import { fetchBootstrap, fetchCustomerMe, fetchMyOrders } from './services/api';
 import {
@@ -24,6 +25,7 @@ import {
   DeliveryZone,
   Order,
   Product,
+  ReorderNotice,
   StoreSettings,
 } from './types/catalog';
 
@@ -72,6 +74,7 @@ export default function App() {
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [isAddressOpen, setIsAddressOpen] = useState(false);
   const [gmpQuotaExceeded, setGmpQuotaExceeded] = useState(false);
+  const [reorderNotice, setReorderNotice] = useState<ReorderNotice | null>(null);
 
   const [quantities, setQuantities] = useState<Record<string, number>>(() => {
     try {
@@ -283,9 +286,59 @@ export default function App() {
 
   const handleOrderConfirmed = useCallback(() => {
     setQuantities({});
+    setReorderNotice(null);
     loadStoreData();
     loadMyOrders();
   }, [loadStoreData, loadMyOrders]);
+
+  const handleReorder = useCallback(
+    (order: Order): { ok: boolean; message?: string } => {
+      if (!order.items || order.items.length === 0) {
+        return { ok: false, message: 'لا توجد منتجات مسجلة في هذا الطلب.' };
+      }
+
+      const additions: Record<string, number> = {};
+      const unavailableNames: string[] = [];
+      const cappedNames: string[] = [];
+      let addedCount = 0;
+
+      for (const item of order.items) {
+        const prod = productMap[item.productId];
+        if (!prod || !prod.isAvailable || prod.stockQuantity <= 0) {
+          unavailableNames.push(item.productName);
+          continue;
+        }
+        const qty = Math.min(prod.stockQuantity, Math.max(1, item.quantity));
+        if (qty < item.quantity) {
+          cappedNames.push(prod.name);
+        }
+        additions[item.productId] = qty;
+        addedCount += 1;
+      }
+
+      if (addedCount === 0) {
+        return {
+          ok: false,
+          message: 'عذرًا، جميع منتجات هذا الطلب غير متوفرة حاليًا في المتجر.',
+        };
+      }
+
+      setQuantities((prev) => ({
+        ...prev,
+        ...additions,
+      }));
+      setReorderNotice({
+        orderNumber: order.orderNumber,
+        addedCount,
+        unavailableNames,
+        cappedNames,
+      });
+      setActiveTab('cart');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return { ok: true };
+    },
+    [productMap],
+  );
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F8FAF8] text-[#0F2417]">
@@ -379,6 +432,8 @@ export default function App() {
                 address={address}
                 customer={customer}
                 runtimeMapsApiKey={runtimeMapsApiKey}
+                reorderNotice={reorderNotice}
+                onDismissReorderNotice={() => setReorderNotice(null)}
                 onIncrement={handleIncrement}
                 onDecrement={handleDecrement}
                 onRemoveItem={handleRemoveItem}
@@ -394,6 +449,7 @@ export default function App() {
                 loading={loadingOrders}
                 onRefresh={loadMyOrders}
                 onGoShopping={() => setActiveTab('home')}
+                onReorder={handleReorder}
               />
             )}
 
@@ -437,6 +493,7 @@ export default function App() {
         product={detailProduct}
         categoryName={detailProduct ? (categoryNameMap[detailProduct.categoryId] || 'عام') : ''}
         quantity={detailProduct ? (quantities[detailProduct.id] ?? 0) : 0}
+        customerName={customer?.name}
         onClose={() => setDetailProduct(null)}
         onIncrement={handleIncrement}
         onDecrement={handleDecrement}
@@ -450,6 +507,8 @@ export default function App() {
         onClose={() => setIsAddressOpen(false)}
         onSave={setAddress}
       />
+
+      <OfflineIndicator />
     </div>
   );
 }

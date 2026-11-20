@@ -8,6 +8,7 @@ import {
   Plus,
   ShoppingBag,
   Trash2,
+  X,
 } from 'lucide-react';
 import { createOrder } from '../services/api';
 import {
@@ -16,6 +17,7 @@ import {
   DeliveryZone,
   Order,
   Product,
+  ReorderNotice,
   StoreSettings,
 } from '../types/catalog';
 import { LocationPickerMap } from './LocationPickerMap';
@@ -28,6 +30,8 @@ interface CartCheckoutViewProps {
   address: DeliveryAddress;
   customer: CustomerProfile | null;
   runtimeMapsApiKey?: string;
+  reorderNotice?: ReorderNotice | null;
+  onDismissReorderNotice?: () => void;
   onIncrement: (id: string) => void;
   onDecrement: (id: string) => void;
   onRemoveItem: (id: string) => void;
@@ -44,6 +48,8 @@ export const CartCheckoutView: React.FC<CartCheckoutViewProps> = ({
   address,
   customer,
   runtimeMapsApiKey,
+  reorderNotice,
+  onDismissReorderNotice,
   onIncrement,
   onDecrement,
   onRemoveItem,
@@ -242,6 +248,42 @@ export const CartCheckoutView: React.FC<CartCheckoutViewProps> = ({
           يتم تحديث الإجمالي ومراجعة المخزون والأسعار لحظيًا من قاعدة بيانات السوبر ماركت.
         </p>
       </div>
+
+      {reorderNotice && (
+        <div
+          role="status"
+          className="rounded-2xl bg-[#ECFDF5] border border-[#86EFAC] p-4 flex items-start justify-between gap-3 text-xs sm:text-sm text-[#14532D]"
+        >
+          <div className="flex items-start gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-[#15803D] shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-bold">
+                تمت إعادة ملء السلة بمنتجات الطلب #{reorderNotice.orderNumber} ({reorderNotice.addedCount} صنف).
+              </p>
+              {reorderNotice.unavailableNames.length > 0 && (
+                <p className="text-xs text-[#92400E]">
+                  منتجات غير متوفرة حاليًا وتم تخطيها: {reorderNotice.unavailableNames.join('، ')}.
+                </p>
+              )}
+              {reorderNotice.cappedNames.length > 0 && (
+                <p className="text-xs text-[#92400E]">
+                  تم تعديل الكمية حسب المخزون المتاح لـ: {reorderNotice.cappedNames.join('، ')}.
+                </p>
+              )}
+            </div>
+          </div>
+          {onDismissReorderNotice && (
+            <button
+              type="button"
+              onClick={onDismissReorderNotice}
+              aria-label="إغلاق التنبيه"
+              className="p-1 rounded-lg hover:bg-white/70 text-[#14532D] cursor-pointer shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Right Column (RTL): Cart Items & Price Summary */}
