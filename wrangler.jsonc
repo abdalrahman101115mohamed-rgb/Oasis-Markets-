@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "alwaha-market",
+  "name": "oasis-supermarket",
   "main": "worker/index.ts",
   "compatibility_date": "2025-04-01",
   "keep_vars": true,
